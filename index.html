@@ -43,6 +43,25 @@
             if (music) music.volume = 0.3;
         });
     </script>
+    <audio id="bg-music" loop>
+  <source src="below_the_dam.mp3" type="audio/mpeg">
+</audio>
+
+<script>
+  function startMusicOnce() {
+    const music = document.getElementById('bg-music');
+    if (music && music.paused) {
+      music.volume = 0.3;
+      music.play().catch(() => {}); // algunos navegadores requieren interacción
+    }
+    window.removeEventListener('click', startMusicOnce);
+    window.removeEventListener('keydown', startMusicOnce);
+  }
+
+  window.addEventListener('click', startMusicOnce, { once: true });
+  window.addEventListener('keydown', startMusicOnce, { once: true });
+</script>
+
 
     <div id="ui-container">
         <div>
