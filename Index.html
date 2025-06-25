@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phantasmagoria Survivors</title>
+    <style>
+        body { margin: 0; background-color: #111; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; font-family: 'Courier New', Courier, monospace; color: #eee; }
+        canvas { border: 1px solid #555; background-color: #2a2a2a; image-rendering: pixelated; image-rendering: crisp-edges; }
+        #ui-container { display: flex; justify-content: space-between; width: 800px; padding: 10px; background-color: #333; border: 1px solid #555; margin-bottom: 10px; }
+        .stat-bar-container { width: 150px; height: 20px; background-color: #555; border: 1px solid #888; margin: 5px 0; }
+        .stat-bar { height: 100%; background-color: red; width: 100%; transition: width 0.1s linear; }
+        #exp-bar { background-color: dodgerblue; } /* Corrected: Directly target #exp-bar */
+        #level-up-screen { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: rgba(0,0,0,0.9); border: 2px solid #ccc; padding: 20px; display: none; flex-direction: column; align-items: center; z-index: 10; }
+        .upgrade-option { background-color: #444; color: #eee; border: 1px solid #777; padding: 10px; margin: 5px; cursor: pointer; min-width: 200px; text-align: center; }
+        .upgrade-option:hover { background-color: #666; }
+        #game-over-screen { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: rgba(0,0,0,0.9); border: 2px solid #ccc; padding: 20px; display: none; flex-direction: column; align-items: center; z-index: 10; text-align: center; }
+        #restart-button { background-color: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; margin-top: 15px; }
+        #restart-button:hover { background-color: #0056b3; }
+        .tooltip {
+            position: absolute;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 5px;
+            border-radius: 3px;
+            font-size: 12px;
+            pointer-events: none;
+            display: none;
+            z-index: 20;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Background music -->
+    <audio id="bg-music" autoplay loop>
+        <source src="Below the Dam.mp3" type="audio/mpeg">
+    </audio>
+    <script>
+        // Set music volume to 30%
+        document.addEventListener('DOMContentLoaded', () => {
+            const music = document.getElementById('bg-music');
+            if (music) music.volume = 0.3;
+        });
+    </script>
+
+    <div id="ui-container">
+        <div>
+            <div>Health: <span id="health-value">100</span>/100</div>
+            <div class="stat-bar-container"><div id="health-bar" class="stat-bar"></div></div>
+        </div>
+        <div>
+            <div>Experience: <span id="exp-value">0</span>/<span id="exp-cap-value">10</span></div>
+            <div class="stat-bar-container"><div id="exp-bar" class="stat-bar"></div></div> {/* Corrected ID for exp-bar */}
+        </div>
+        <div>Level: <span id="level-value">1</span></div>
+        <div>Time: <span id="time-value">00:00</span></div>
+        <div>Gold: <span id="gold-value">0</span></div>
+        <div>Kills: <span id="kills-value">0</span></div>
+    </div>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+    <div id="level-up-screen">
+        <h2>LEVEL UP!</h2>
+        <div id="upgrade-options-container"></div>
+    </div>
+
+    <div id="game-over-screen">
+        <h2>GAME OVER</h2>
+        <p>Survived: <span id="final-time"></span></p>
+        <p>Kills: <span id="final-kills"></span></p>
+        <p>Gold Collected: <span id="final-gold"></span></p>
+        <button id="restart-button">Restart</button>
+    </div>
+
+    <div id="upgrade-tooltip" class="tooltip"></div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const healthValueUI = document.getElementById('health-value');
+        const healthBarUI = document.getElementById('health-bar');
+        const expValueUI = document.getElementById('exp-value');
+        const expCapValueUI = document.getElementById('exp-cap-value');
+        const expBarUI = document.getElementById('exp-bar');
+        const levelValueUI = document.getElementById('level-value');
+        const timeValueUI = document.getElementById('time-value');
+        const goldValueUI = document.getElementById('gold-value');
+        const killsValueUI = document.getElementById('kills-value');
+        const levelUpScreen = document.getElementById('level-up-screen');
+        const upgradeOptionsContainer = document.getElementById('upgrade-options-container');
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const finalTimeUI = document.getElementById('final-time');
+        const finalKillsUI = document.getElementById('final-kills');
+        const finalGoldUI = document.getElementById('final-gold');
+        const restartButton = document.getElementById('restart-button');
+        const upgradeTooltip = document.getElementById('upgrade-tooltip');
+
+        let player;
+        let enemies = [];
+        let projectiles = [];
+        let xpOrbs = [];
+        let goldCoins = [];
+        let foodItems = [];
+        let score = 0;
+        let kills = 0;
+        let gameTime = 0;
+        let gameTimerInterval;
+        let isGameOver = false;
+        let isPaused = false;
+        let enemySpawnInterval = 2000;
+        let lastEnemySpawnTime = 0;
+        const keys = {};
+
+        const PLAYER_COLORS = {
+            skin: '#F0D8C0', hair: '#201008', dress_main: '#A0A0A0',
+            dress_highlight: '#C0C0C0', dress_shadow: '#808080', eyes: '#FF0000'
+        };
+
+        function drawPixelArtPlayer(x, y, size) {
+            const s = size / 10;
+            ctx.fillStyle = PLAYER_COLORS.hair;
+            ctx.fillRect(x + s * 3, y, s * 4, s * 3);
+            ctx.fillRect(x + s * 2, y + s * 1, s, s * 3);
+            ctx.fillRect(x + s * 7, y + s * 1, s, s * 3);
+            ctx.fillStyle = PLAYER_COLORS.skin;
+            ctx.fillRect(x + s * 3, y + s * 2, s * 4, s * 2);
+            ctx.fillStyle = PLAYER_COLORS.eyes;
+            ctx.fillRect(x + s * 4, y + s * 3, s, s);
+            ctx.fillRect(x + s * 5, y + s * 3, s, s);
+            ctx.fillStyle = PLAYER_COLORS.dress_main;
+            ctx.fillRect(x + s * 3, y + s * 4, s * 4, s * 2);
+            ctx.fillRect(x + s * 2, y + s * 5, s * 6, s * 4);
+            ctx.fillRect(x + s * 1, y + s * 7, s * 8, s * 3);
+            ctx.fillStyle = PLAYER_COLORS.dress_highlight;
+            ctx.fillRect(x + s * 2, y + s * 4, s, s * 2);
+            ctx.fillRect(x + s * 7, y + s * 4, s, s * 2);
+            ctx.fillStyle = PLAYER_COLORS.dress_shadow;
+            ctx.fillRect(x + s * 4, y + s * 9, s * 2, s);
+        }
+
+        class Player {
+            constructor() {
+                this.width = 30; this.height = 30;
+                this.x = canvas.width / 2 - this.width / 2;
+                this.y = canvas.height / 2 - this.height / 2;
+                this.speed = 3; this.maxHealth = 100; this.health = this.maxHealth;
+                this.level = 1; this.exp = 0; this.expToNextLevel = 10;
+                this.weapons = []; this.gold = 0; this.pickupRadius = 60;
+                this.might = 1.0; this.armor = 0; this.moveSpeedMultiplier = 1.0;
+                this.luck = 1.0; this.greed = 1.0;
+                this.addWeapon(new Whip(this));
+            }
+            addWeapon(weaponInstance) { this.weapons.push(weaponInstance); }
+            update() {
+                let dx = 0, dy = 0;
+                if (keys['w'] || keys['ArrowUp']) dy -= 1;
+                if (keys['s'] || keys['ArrowDown']) dy += 1;
+                if (keys['a'] || keys['ArrowLeft']) dx -= 1;
+                if (keys['d'] || keys['ArrowRight']) dx += 1;
+                if (dx !== 0 && dy !== 0) { const l = Math.sqrt(dx * dx + dy * dy); dx /= l; dy /= l; }
+                this.x += dx * this.speed * this.moveSpeedMultiplier;
+                this.y += dy * this.speed * this.moveSpeedMultiplier;
+                this.x = Math.max(0, Math.min(canvas.width - this.width, this.x));
+                this.y = Math.max(0, Math.min(canvas.height - this.height, this.y));
+                this.weapons.forEach(w => w.update());
+                xpOrbs.forEach(orb => {
+                    const dist = Math.hypot(this.x + this.width / 2 - orb.x, this.y + this.height / 2 - orb.y);
+                    if (dist < this.pickupRadius) orb.isAttracted = true;
+                    if (orb.isAttracted) {
+                        const angle = Math.atan2(this.y + this.height / 2 - orb.y, this.x + this.width / 2 - orb.x);
+                        orb.x += Math.cos(angle) * 5; orb.y += Math.sin(angle) * 5;
+                    }
+                });
+            }
+            draw() { drawPixelArtPlayer(this.x, this.y, this.width); this.weapons.forEach(w => w.draw()); }
+            takeDamage(amount) {
+                const actualDamage = Math.max(1, amount - this.armor);
+                this.health -= actualDamage;
+                updateHealthUI();
+                if (this.health <= 0) gameOver();
+            }
+            gainExp(amount) {
+                if (isGameOver) return;
+                this.exp += amount;
+                if (this.exp >= this.expToNextLevel) this.levelUp();
+                updateExpUI();
+            }
+            gainGold(amount) { this.gold += Math.floor(amount * this.greed); updateGoldUI(); }
+            heal(amount) { this.health = Math.min(this.maxHealth, this.health + amount); updateHealthUI(); }
+            levelUp() {
+                this.level++; this.exp -= this.expToNextLevel;
+                this.expToNextLevel = Math.floor(this.expToNextLevel * 1.5);
+                levelValueUI.textContent = this.level; updateExpUI();
+                this.health = this.maxHealth; updateHealthUI();
+                isPaused = true; showLevelUpOptions();
+            }
+        }
+
+        const WEAPON_TYPES = { WHIP: 'Whip', MAGIC_WAND: 'Magic Wand', GARLIC: 'Garlic', AXE: 'Axe' };
+        const UPGRADE_DESCRIPTIONS = {
+            [WEAPON_TYPES.WHIP]: ["Fires 1 more projectile.", "Base damage +5. Area +10%.", "Fires 1 more projectile.", "Base damage +5. Area +10%.", "Fires 1 more projectile.", "Base damage +10. Area +20%.", "Fires 1 more projectile. Hits twice."],
+            [WEAPON_TYPES.MAGIC_WAND]: ["Fires 1 more projectile.", "Cooldown -0.2s.", "Fires 1 more projectile.", "Base damage +10.", "Fires 1 more projectile.", "Cooldown -0.2s.", "Fires 1 more projectile. No cooldown."],
+            [WEAPON_TYPES.GARLIC]: ["Area +20%. Damage +1.", "Cooldown -0.1s. Damage +1.", "Area +20%. Damage +1.", "Cooldown -0.1s. Damage +2.", "Area +20%. Damage +2.", "Cooldown -0.1s. Damage +2.", "Steals HP from enemies."],
+            [WEAPON_TYPES.AXE]: ["Fires 1 more projectile.", "Base damage +5. Area +10%.", "Fires 1 more projectile.", "Base damage +5. Area +10%.", "Fires 1 more projectile.", "Base damage +10. Area +20%.", "Passes through enemies."]
+        };
+
+        class Whip {
+            constructor(p) { this.player = p; this.type = WEAPON_TYPES.WHIP; this.level = 1; this.maxLevel = 8; this.baseDamage = 10; this.cooldown = 1500; this.lastAttackTime = 0; this.hitboxWidth = 60; this.hitboxHeight = 15; this.activeHitboxes = []; this.hitDuration = 150; this.projectiles = 1; this.areaMultiplier = 1.0; }
+            getDamage() { return (this.baseDamage + (this.level > 3 ? 5 : 0) + (this.level > 5 ? 5 : 0)) * this.player.might; }
+            getArea() { return this.areaMultiplier * (1 + (this.level > 3 ? 0.1 : 0) + (this.level > 5 ? 0.1 : 0)); }
+            update() { if (Date.now() - this.lastAttackTime > this.cooldown) { this.attack(); this.lastAttackTime = Date.now(); } this.activeHitboxes = this.activeHitboxes.filter(hb => Date.now() - hb.startTime < this.hitDuration); }
+            attack() {
+                const actualW = this.hitboxWidth * this.getArea(); const actualH = this.hitboxHeight * this.getArea();
+                for (let i = 0; i < this.projectiles; i++) {
+                    this.activeHitboxes.push({ x: this.player.x + this.player.width / 2, y: this.player.y + this.player.height / 2 - actualH / 2 - (i * 5), width: actualW, height: actualH, startTime: Date.now(), enemiesHit: new Set() });
+                    this.activeHitboxes.push({ x: this.player.x + this.player.width / 2 - actualW, y: this.player.y + this.player.height / 2 - actualH / 2 + (i * 5), width: actualW, height: actualH, startTime: Date.now(), enemiesHit: new Set() });
+                }
+            }
+            draw() { ctx.fillStyle = 'rgba(200, 200, 200, 0.5)'; this.activeHitboxes.forEach(hb => ctx.fillRect(hb.x, hb.y, hb.width, hb.height)); }
+            upgrade() { if (this.level < this.maxLevel) { this.level++; if ([2, 4, 6, 8].includes(this.level)) this.projectiles++; } }
+        }
+        class MagicWand {
+            constructor(p) { this.player = p; this.type = WEAPON_TYPES.MAGIC_WAND; this.level = 1; this.maxLevel = 8; this.baseDamage = 15; this.cooldown = 1200; this.lastAttackTime = 0; this.projectiles = 1; }
+            getDamage() { return (this.baseDamage + (this.level > 4 ? 10 : 0)) * this.player.might; }
+            getCooldown() { return this.level === 8 ? 0 : this.cooldown - (this.level > 2 ? 200 : 0) - (this.level > 6 ? 200 : 0); }
+            update() { if (Date.now() - this.lastAttackTime > this.getCooldown()) { this.attack(); this.lastAttackTime = Date.now(); } }
+            attack() {
+                const targets = [...enemies].sort((a, b) => Math.hypot(a.x - this.player.x, a.y - this.player.y) - Math.hypot(b.x - this.player.x, b.y - this.player.y)).slice(0, this.projectiles);
+                targets.forEach(target => projectiles.push(new Projectile(this.player.x + this.player.width / 2, this.player.y + this.player.height / 2, target, this.getDamage(), 'blue')));
+            }
+            draw() {}
+            upgrade() { if (this.level < this.maxLevel) { this.level++; if ([2, 4, 6, 8].includes(this.level)) this.projectiles++; } }
+        }
+        class Garlic {
+            constructor(p) { this.player = p; this.type = WEAPON_TYPES.GARLIC; this.level = 1; this.maxLevel = 8; this.baseDamage = 3; this.damageTickInterval = 500; this.lastDamageTick = 0; this.baseRadius = 50; this.enemiesHitThisTick = new Set(); }
+            getDamage() { return (this.baseDamage + Math.floor((this.level-1)/2)*1 + (this.level>=4?1:0) + (this.level>=6?1:0)) * this.player.might; }
+            getRadius() { return this.baseRadius * (1 + Math.floor((this.level-1)/2)*0.2 + (this.level>=2?0.2:0) + (this.level>=5?0.2:0)); } // Simplified area increase logic slightly
+            getCooldownReduction() { return Math.floor((this.level-1)/2)*0.1 + (this.level>=3?0.1:0) + (this.level>=5?0.1:0); }
+            update() {
+                if (Date.now() - this.lastDamageTick > (this.damageTickInterval * (1 - this.getCooldownReduction())) ) {
+                    this.enemiesHitThisTick.clear();
+                    enemies.forEach(e => {
+                        if (Math.hypot((this.player.x+this.player.width/2)-(e.x+e.width/2), (this.player.y+this.player.height/2)-(e.y+e.height/2)) < this.getRadius()+e.width/2) {
+                            e.takeDamage(this.getDamage()); this.enemiesHitThisTick.add(e);
+                            if (this.level === 8 && Math.random() < 0.15) this.player.heal(1); // Soul Eater
+                        }
+                    });
+                    this.lastDamageTick = Date.now();
+                }
+            }
+            draw() { ctx.beginPath(); ctx.arc(this.player.x+this.player.width/2, this.player.y+this.player.height/2, this.getRadius(), 0, Math.PI*2); ctx.fillStyle = 'rgba(220,220,180,0.15)'; ctx.fill(); ctx.fillStyle = 'rgba(255,0,0,0.3)'; this.enemiesHitThisTick.forEach(e => { if(!e.isDead) ctx.fillRect(e.x,e.y,e.width,e.height); }); }
+            upgrade() { if (this.level < this.maxLevel) this.level++; }
+        }
+        class Axe {
+            constructor(p) { this.player = p; this.type = WEAPON_TYPES.AXE; this.level = 1; this.maxLevel = 8; this.baseDamage = 30; this.cooldown = 1800; this.lastAttackTime = 0; this.projectiles = 1; this.areaMultiplier = 1.0; }
+            getDamage() { return (this.baseDamage + (this.level>=3?5:0) + (this.level>=5?5:0) + (this.level>=7?10:0)) * this.player.might; }
+            getArea() { return this.areaMultiplier * (1 + (this.level>=3?0.1:0) + (this.level>=5?0.1:0) + (this.level>=7?0.2:0)); }
+            update() { if (Date.now() - this.lastAttackTime > this.cooldown) { this.attack(); this.lastAttackTime = Date.now(); } }
+            attack() { for (let i=0; i<this.projectiles; i++) projectiles.push(new Projectile(this.player.x+this.player.width/2, this.player.y+this.player.height/2, null, this.getDamage(), 'saddlebrown', true, this.getArea(), this.level===8)); }
+            draw() {}
+            upgrade() { if (this.level < this.maxLevel) { this.level++; if ([2,4,6].includes(this.level)) this.projectiles++; } }
+        }
+        class Projectile {
+            constructor(x, y, target, damage, color='blue', isAxe=false, area=1, pass=false) {
+                this.x=x; this.y=y; this.width=isAxe?12*area:8; this.height=isAxe?12*area:8;
+                this.speed=5; this.damage=damage; this.color=color; this.enemiesHit=new Set();
+                this.isAxe=isAxe; this.passThrough=pass;
+                if (isAxe) { this.dx=(Math.random()-0.5)*4; this.dy=-6; this.gravity=0.2; this.rotation=0; this.rotationSpeed=0.2; }
+                else if (target) { const a=Math.atan2(target.y-y,target.x-x); this.dx=Math.cos(a)*this.speed; this.dy=Math.sin(a)*this.speed; }
+                else { this.dx=0; this.dy=-this.speed; }
+            }
+            update() { if (this.isAxe) { this.x+=this.dx; this.y+=this.dy; this.dy+=this.gravity; this.rotation+=this.rotationSpeed; } else { this.x+=this.dx; this.y+=this.dy; } }
+            draw() {
+                if (this.isAxe) { ctx.save(); ctx.translate(this.x+this.width/2,this.y+this.height/2); ctx.rotate(this.rotation); ctx.fillStyle=this.color; ctx.fillRect(-this.width/2,-this.height/4,this.width,this.height/2); ctx.beginPath(); ctx.moveTo(0,-this.height/2); ctx.lineTo(this.width/2,-this.height/4); ctx.lineTo(this.width/2,this.height/4); ctx.lineTo(0,this.height/2); ctx.closePath(); ctx.fill(); ctx.restore(); }
+                else { ctx.fillStyle=this.color; ctx.beginPath(); ctx.arc(this.x,this.y,this.width/2,0,Math.PI*2); ctx.fill(); }
+            }
+        }
+        const PASSIVE_UPGRADES = {
+            MIGHT: { name: "Might", description: "Increases all damage by 10%.", apply: (p) => p.might+=0.1, maxLevel: 5 },
+            ARMOR: { name: "Armor", description: "Reduces incoming damage by 1.", apply: (p) => p.armor+=1, maxLevel: 5 },
+            MAX_HEALTH: { name: "Max Health", description: "Increases Max Health by 10%.", apply: (p)=>{p.maxHealth*=1.1;p.health=p.maxHealth;updateHealthUI();}, maxLevel: 5 },
+            MOVE_SPEED: { name: "Move Speed", description: "Increases movement speed by 10%.", apply: (p)=>p.moveSpeedMultiplier+=0.1, maxLevel: 5 },
+            LUCK: { name: "Luck", description: "Increases luck by 15%.", apply: (p)=>p.luck+=0.15, maxLevel: 5 },
+            GREED: { name: "Greed", description: "Increases gold gain by 10%.", apply: (p)=>p.greed+=0.1, maxLevel: 5 },
+        };
+        let passiveUpgradeLevels = {};
+
+        const ENEMY_TYPES_DATA = {
+            BAT: { health:10,speed:1.5,damage:5,color:'#503050',width:15,height:10,xp:1,goldChance:0.1,goldAmount:1, sprite:(ctx,x,y,w,h,c)=>{ctx.fillStyle=c; ctx.beginPath();ctx.ellipse(x+w/2,y+h/2,w/2,h/3,0,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.moveTo(x+w/2,y+h/2);ctx.lineTo(x-w/4,y);ctx.lineTo(x-w/4,y+h);ctx.closePath();ctx.fill();ctx.beginPath();ctx.moveTo(x+w/2,y+h/2);ctx.lineTo(x+w+w/4,y);ctx.lineTo(x+w+w/4,y+h);ctx.closePath();ctx.fill();} },
+            SKELETON: { health:30,speed:1,damage:10,color:'#E0E0E0',width:20,height:25,xp:3,goldChance:0.2,goldAmount:2, sprite:(ctx,x,y,w,h,c)=>{ctx.fillStyle=c;ctx.fillRect(x+w*0.3,y,w*0.4,h*0.3);ctx.fillRect(x+w*0.4,y+h*0.3,w*0.2,h*0.4);ctx.fillRect(x,y+h*0.35,w,h*0.1);ctx.fillRect(x+w*0.2,y+h*0.7,w*0.2,h*0.3);ctx.fillRect(x+w*0.6,y+h*0.7,w*0.2,h*0.3);ctx.fillStyle='black';ctx.fillRect(x+w*0.35,y+h*0.05,w*0.1,h*0.1);ctx.fillRect(x+w*0.55,y+h*0.05,w*0.1,h*0.1);} },
+            GHOUL: { health:50,speed:0.8,damage:15,color:'#77AADD',width:25,height:28,xp:5,goldChance:0.3,goldAmount:3, sprite:(ctx,x,y,w,h,c)=>{ctx.fillStyle=c;ctx.fillRect(x,y+h*0.2,w,h*0.8);ctx.beginPath();ctx.arc(x+w/2,y+h*0.2,w*0.4,Math.PI,0);ctx.fill();ctx.fillStyle='#334455';ctx.fillRect(x+w*0.2,y+h*0.1,w*0.2,h*0.1);ctx.fillRect(x+w*0.6,y+h*0.1,w*0.2,h*0.1);ctx.fillRect(x+w*0.3,y+h*0.3,w*0.4,h*0.05);} },
+            HOODED_SKULL: { health:40,speed:1.2,damage:12,color:'#AA8800',width:22,height:26,xp:4,goldChance:0.25,goldAmount:2, sprite:(ctx,x,y,w,h,c)=>{ctx.fillStyle=c;ctx.beginPath();ctx.moveTo(x,y+h);ctx.quadraticCurveTo(x+w/2,y-h/3,x+w,y+h);ctx.fill();ctx.fillStyle='#FFFFFF';ctx.fillRect(x+w*0.25,y+h*0.2,w*0.5,h*0.5);ctx.fillStyle='black';ctx.fillRect(x+w*0.3,y+h*0.3,w*0.15,h*0.15);ctx.fillRect(x+w*0.55,y+h*0.3,w*0.15,h*0.15);} }
+        };
+        class Enemy {
+            constructor(type) {
+                const d=ENEMY_TYPES_DATA[type]; this.type=type; this.width=d.width; this.height=d.height;
+                const side=Math.floor(Math.random()*4);
+                if(side===0){this.x=Math.random()*canvas.width;this.y=-this.height;}else if(side===1){this.x=canvas.width;this.y=Math.random()*canvas.height;}else if(side===2){this.x=Math.random()*canvas.width;this.y=canvas.height;}else{this.x=-this.width;this.y=Math.random()*canvas.height;}
+                this.health=d.health; this.maxHealth=d.health; this.speed=d.speed; this.damage=d.damage; this.color=d.color;
+                this.xpValue=d.xp; this.goldChance=d.goldChance; this.goldAmount=d.goldAmount; this.drawSprite=d.sprite;
+                this.isDead=false; this.knockbackResistance=0; this.flashTimer=0;
+            }
+            update() { if(this.isDead)return; const a=Math.atan2(player.y-this.y,player.x-this.x); this.x+=Math.cos(a)*this.speed; this.y+=Math.sin(a)*this.speed; if(this.flashTimer>0)this.flashTimer--; }
+            draw() { if(this.isDead)return; if(this.flashTimer>0&&Math.floor(this.flashTimer/3)%2===0){ctx.fillStyle='white';ctx.fillRect(this.x,this.y,this.width,this.height);}else{this.drawSprite(ctx,this.x,this.y,this.width,this.height,this.color);} if(this.health<this.maxHealth){ctx.fillStyle='grey';ctx.fillRect(this.x,this.y-7,this.width,5);ctx.fillStyle='green';ctx.fillRect(this.x,this.y-7,(this.health/this.maxHealth)*this.width,5);} }
+            takeDamage(amount) { if(this.isDead)return; this.health-=amount; this.flashTimer=15; if(this.health<=0)this.die(); }
+            die() { this.isDead=true; kills++; killsValueUI.textContent=kills; xpOrbs.push(new XPOrb(this.x+this.width/2,this.y+this.height/2,this.xpValue)); if(Math.random()<this.goldChance*player.luck)goldCoins.push(new GoldCoin(this.x+this.width/2,this.y+this.height/2,this.goldAmount)); if(Math.random()<0.05*player.luck)foodItems.push(new FoodItem(this.x+this.width/2,this.y+this.height/2)); }
+        }
+        class XPOrb{constructor(x,y,v){this.x=x;this.y=y;this.radius=4;this.value=v;this.color='cyan';this.isAttracted=false;}update(){}draw(){ctx.fillStyle=this.color;ctx.beginPath();ctx.arc(this.x,this.y,this.radius,0,Math.PI*2);ctx.fill();}}
+        class GoldCoin{constructor(x,y,v){this.x=x;this.y=y;this.radius=5;this.value=v;this.color='gold';}update(){}draw(){ctx.fillStyle=this.color;ctx.beginPath();ctx.arc(this.x,this.y,this.radius,0,Math.PI*2);ctx.fill();}}
+        class FoodItem{constructor(x,y){this.x=x;this.y=y;this.width=15;this.height=10;this.healAmount=30;}update(){}draw(){ctx.fillStyle='#8B4513';ctx.fillRect(this.x,this.y+this.height*0.4,this.width*0.4,this.height*0.2);ctx.beginPath();ctx.ellipse(this.x+this.width*0.7,this.y+this.height*0.5,this.width*0.3,this.height*0.5,0,0,Math.PI*2);ctx.fill();}}
+
+        function initGame() {
+            isGameOver=false; isPaused=false; player=new Player(); enemies=[]; projectiles=[]; xpOrbs=[]; goldCoins=[]; foodItems=[];
+            score=0; kills=0; gameTime=0; enemySpawnInterval=2000; lastEnemySpawnTime=performance.now(); passiveUpgradeLevels={};
+            updateHealthUI(); updateExpUI(); updateGoldUI(); killsValueUI.textContent=kills; timeValueUI.textContent=formatTime(gameTime);
+            gameOverScreen.style.display='none'; levelUpScreen.style.display='none';
+            if(gameTimerInterval)clearInterval(gameTimerInterval);
+            gameTimerInterval=setInterval(()=>{if(!isPaused&&!isGameOver){gameTime++;timeValueUI.textContent=formatTime(gameTime);if(gameTime%30===0&&enemySpawnInterval>500)enemySpawnInterval=Math.max(500,enemySpawnInterval*0.9);}},1000);
+            gameLoop();
+        }
+        function formatTime(s){const m=Math.floor(s/60);const c=s%60;return`${m.toString().padStart(2,'0')}:${c.toString().padStart(2,'0')}`; }
+        function updateHealthUI(){healthValueUI.textContent=Math.max(0,Math.ceil(player.health));healthBarUI.style.width=`${Math.max(0,(player.health/player.maxHealth)*100)}%`;}
+        function updateExpUI(){expValueUI.textContent=Math.floor(player.exp);expCapValueUI.textContent=player.expToNextLevel;expBarUI.style.width=`${(player.exp/player.expToNextLevel)*100}%`;}
+        function updateGoldUI(){goldValueUI.textContent=player.gold;}
+        function spawnEnemy() {
+            if (performance.now() - lastEnemySpawnTime > enemySpawnInterval) {
+                const enemyTypes = Object.keys(ENEMY_TYPES_DATA);
+                let type = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
+                if (gameTime < 30 && Math.random() < 0.8) type = 'BAT';
+                else if (gameTime < 60 && Math.random() < 0.6) type = 'BAT';
+                enemies.push(new Enemy(type));
+                lastEnemySpawnTime = performance.now();
+            }
+        }
+        function checkCollisions() {
+            let projectilesToRemove = [];
+            projectiles.forEach((p, pIndex) => {
+                let hitSomething = false;
+                enemies.forEach((e) => {
+                    if (!e.isDead && !p.enemiesHit.has(e) && p.x < e.x+e.width && p.x+p.width > e.x && p.y < e.y+e.height && p.y+p.height > e.y) {
+                        e.takeDamage(p.damage);
+                        hitSomething = true;
+                        if (!p.passThrough) projectilesToRemove.push(pIndex); else p.enemiesHit.add(e);
+                    }
+                });
+                if (p.x < -50 || p.x > canvas.width+50 || p.y < -50 || p.y > canvas.height+(p.isAxe?100:0)) projectilesToRemove.push(pIndex);
+            });
+            projectilesToRemove.sort((a,b) => b-a).forEach(idx => projectiles.splice(idx, 1)); // Remove in reverse
+
+            player.weapons.filter(w=>w.type===WEAPON_TYPES.WHIP).forEach(whip=>{whip.activeHitboxes.forEach(hb=>{enemies.forEach(e=>{if(!e.isDead&&!hb.enemiesHit.has(e)&&hb.x<e.x+e.width&&hb.x+hb.width>e.x&&hb.y<e.y+e.height&&hb.y+hb.height>e.y){e.takeDamage(whip.getDamage());hb.enemiesHit.add(e);if(whip.level===8)setTimeout(()=>{if(!e.isDead)e.takeDamage(whip.getDamage());},50);}});});});
+            enemies.forEach(e=>{if(!e.isDead&&player.x<e.x+e.width&&player.x+player.width>e.x&&player.y<e.y+e.height&&player.y+player.height>e.y)player.takeDamage(e.damage);});
+            xpOrbs.forEach((o,i)=>{if(player.x<o.x+o.radius&&player.x+player.width>o.x-o.radius&&player.y<o.y+o.radius&&player.y+player.height>o.y-o.radius){player.gainExp(o.value);xpOrbs.splice(i,1);}});
+            goldCoins.forEach((c,i)=>{if(player.x<c.x+c.radius&&player.x+player.width>c.x-c.radius&&player.y<c.y+c.radius&&player.y+player.height>c.y-c.radius){player.gainGold(c.value);goldCoins.splice(i,1);}});
+            foodItems.forEach((f,i)=>{if(player.x<f.x+f.width&&player.x+player.width>f.x&&player.y<f.y+f.height&&player.y+player.height>f.y){player.heal(f.healAmount);foodItems.splice(i,1);}});
+        }
+        function getAvailableUpgrades() {
+            const opts=[]; const existingWTypes=player.weapons.map(w=>w.type);
+            const upgradableW=player.weapons.filter(w=>w.level<w.maxLevel); if(upgradableW.length>0){const wTU=upgradableW[Math.floor(Math.random()*upgradableW.length)];opts.push({text:`Upgrade ${wTU.type} (L${wTU.level+1})`,action:()=>wTU.upgrade(),description:UPGRADE_DESCRIPTIONS[wTU.type]?.[wTU.level]||"Empowers weapon."});}
+            const allWTypes=Object.values(WEAPON_TYPES); const newWCands=allWTypes.filter(wt=>!existingWTypes.includes(wt));
+            if(player.weapons.length<6&&newWCands.length>0){const nWT=newWCands[Math.floor(Math.random()*newWCands.length)];opts.push({text:`New: ${nWT}`,action:()=>{if(nWT===WEAPON_TYPES.MAGIC_WAND)player.addWeapon(new MagicWand(player));else if(nWT===WEAPON_TYPES.GARLIC)player.addWeapon(new Garlic(player));else if(nWT===WEAPON_TYPES.AXE)player.addWeapon(new Axe(player));},description:"New weapon."});}
+            const pKeys=Object.keys(PASSIVE_UPGRADES); let att=0;
+            while(opts.length<Math.min(player.luck>=1.3?4:3, pKeys.length + newWCands.length + upgradableW.length) && att<20){
+                const pK=pKeys[Math.floor(Math.random()*pKeys.length)]; const cL=passiveUpgradeLevels[pK]||0;
+                if(cL<PASSIVE_UPGRADES[pK].maxLevel && !opts.find(o=>o.text.startsWith(PASSIVE_UPGRADES[pK].name))){opts.push({text:`${PASSIVE_UPGRADES[pK].name} (L${cL+1})`,action:()=>{PASSIVE_UPGRADES[pK].apply(player);passiveUpgradeLevels[pK]=(passiveUpgradeLevels[pK]||0)+1;},description:PASSIVE_UPGRADES[pK].description});}
+                att++;
+            }
+            if(opts.length===0){opts.push({text:"Floor Chicken",action:()=>player.heal(30),description:"Heals 30 HP."}); if(player.luck>1.1)opts.push({text:"Gold Bag",action:()=>player.gainGold(25),description:"Gain 25 Gold."});}
+            return opts.slice(0, player.luck >= 1.3 ? 4 : 3);
+        }
+        function showLevelUpOptions() {
+            upgradeOptionsContainer.innerHTML=''; const upgrades=getAvailableUpgrades();
+            upgrades.forEach(upg=>{const oD=document.createElement('div');oD.classList.add('upgrade-option');oD.textContent=upg.text;oD.onclick=()=>{upg.action();levelUpScreen.style.display='none';isPaused=false;};oD.onmouseenter=(e)=>{if(upgradeTooltip){upgradeTooltip.textContent=upg.description;upgradeTooltip.style.display='block';upgradeTooltip.style.left=e.clientX+15+'px';upgradeTooltip.style.top=e.clientY+15+'px';}};oD.onmouseleave=()=>{if(upgradeTooltip)upgradeTooltip.style.display='none';};upgradeOptionsContainer.appendChild(oD);});
+            levelUpScreen.style.display='flex';
+        }
+        function gameOver() {
+            isGameOver=true; clearInterval(gameTimerInterval);
+            finalTimeUI.textContent=formatTime(gameTime); finalKillsUI.textContent=kills; finalGoldUI.textContent=player.gold;
+            gameOverScreen.style.display='flex';
+        }
+        function gameLoop() {
+            if(isGameOver)return; if(isPaused){requestAnimationFrame(gameLoop);return;}
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            player.update();
+            enemies.forEach(e=>e.update()); enemies=enemies.filter(e=>!e.isDead);
+            projectiles.forEach(p=>p.update());
+             // Filter projectiles after all updates and collision checks for them are done in a frame
+            projectiles = projectiles.filter(p => p.x > -50 && p.x < canvas.width + 50 && p.y > -50 && p.y < canvas.height + (p.isAxe ? 100 : 0));
+
+            xpOrbs.forEach(o=>o.update()); goldCoins.forEach(c=>c.update()); foodItems.forEach(f=>f.update());
+            spawnEnemy(); checkCollisions();
+            xpOrbs.forEach(o=>o.draw()); goldCoins.forEach(c=>c.draw()); foodItems.forEach(f=>f.draw());
+            enemies.forEach(e=>e.draw()); projectiles.forEach(p=>p.draw()); player.draw();
+            requestAnimationFrame(gameLoop);
+        }
+        window.addEventListener('keydown',(e)=>keys[e.key.toLowerCase()]=true);
+        window.addEventListener('keyup',(e)=>keys[e.key.toLowerCase()]=false);
+        restartButton.addEventListener('click',initGame);
+        document.addEventListener('mousemove',(e)=>{if(upgradeTooltip&&upgradeTooltip.style.display==='block'){upgradeTooltip.style.left=e.clientX+15+'px';upgradeTooltip.style.top=e.clientY+15+'px';}});
+        initGame();
+    </script>
+</body>
+</html>
