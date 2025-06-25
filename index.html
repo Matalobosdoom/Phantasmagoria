@@ -10,7 +10,7 @@
         #ui-container { display: flex; justify-content: space-between; width: 800px; padding: 10px; background-color: #333; border: 1px solid #555; margin-bottom: 10px; }
         .stat-bar-container { width: 150px; height: 20px; background-color: #555; border: 1px solid #888; margin: 5px 0; }
         .stat-bar { height: 100%; background-color: red; width: 100%; transition: width 0.1s linear; }
-        #exp-bar { background-color: dodgerblue; } /* Corrected: Directly target #exp-bar */
+        #exp-bar { background-color: dodgerblue; }
         #level-up-screen { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: rgba(0,0,0,0.9); border: 2px solid #ccc; padding: 20px; display: none; flex-direction: column; align-items: center; z-index: 10; }
         .upgrade-option { background-color: #444; color: #eee; border: 1px solid #777; padding: 10px; margin: 5px; cursor: pointer; min-width: 200px; text-align: center; }
         .upgrade-option:hover { background-color: #666; }
@@ -32,35 +32,26 @@
 </head>
 <body>
 
-    <!-- Background music -->
-    <audio id="bg-music" autoplay loop>
-        <source src="Below the Dam.mp3" type="audio/mpeg">
-    </audio>
-    <script>
-        // Set music volume to 30%
-        document.addEventListener('DOMContentLoaded', () => {
-            const music = document.getElementById('bg-music');
-            if (music) music.volume = 0.3;
-        });
-    </script>
     <audio id="bg-music" loop>
-  <source src="below_the_dam.mp3" type="audio/mpeg">
-</audio>
+      <source src="below_the_dam.mp3" type="audio/mpeg">
+    </audio>
 
-<script>
-  function startMusicOnce() {
-    const music = document.getElementById('bg-music');
-    if (music && music.paused) {
-      music.volume = 0.3;
-      music.play().catch(() => {}); // algunos navegadores requieren interacción
-    }
-    window.removeEventListener('click', startMusicOnce);
-    window.removeEventListener('keydown', startMusicOnce);
-  }
+    <script>
+      function startMusicOnce() {
+        const music = document.getElementById('bg-music');
+        // Check if music exists and is paused before attempting to play
+        if (music && music.paused) {
+          music.volume = 0.3;
+          music.play().catch(() => { /* Autoplay blocked, catch the error quietly */ });
+        }
+        // No need to manually remove listeners if using { once: true }
+      }
 
-  window.addEventListener('click', startMusicOnce, { once: true });
-  window.addEventListener('keydown', startMusicOnce, { once: true });
-</script>
+      // Listen for a click or keydown event anywhere on the window to start music
+      // The { once: true } option ensures the listener is automatically removed after being triggered once.
+      window.addEventListener('click', startMusicOnce, { once: true });
+      window.addEventListener('keydown', startMusicOnce, { once: true });
+    </script>
 
 
     <div id="ui-container">
@@ -70,7 +61,7 @@
         </div>
         <div>
             <div>Experience: <span id="exp-value">0</span>/<span id="exp-cap-value">10</span></div>
-            <div class="stat-bar-container"><div id="exp-bar" class="stat-bar"></div></div> {/* Corrected ID for exp-bar */}
+            <div class="stat-bar-container"><div id="exp-bar" class="stat-bar"></div></div>
         </div>
         <div>Level: <span id="level-value">1</span></div>
         <div>Time: <span id="time-value">00:00</span></div>
