@@ -5,16 +5,75 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Phantasmagoria Survivors</title>
     <style>
-        body { margin: 0; background-color: #111; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; font-family: 'Courier New', Courier, monospace; color: #eee; }
-        canvas { border: 1px solid #555; background-color: #2a2a2a; image-rendering: pixelated; image-rendering: crisp-edges; }
-        #ui-container { display: flex; justify-content: space-between; width: 800px; padding: 10px; background-color: #333; border: 1px solid #555; margin-bottom: 10px; }
+        body {
+            margin: 0;
+            background-color: #111;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            font-family: 'Courier New', Courier, monospace;
+            color: #eee;
+            /* Allow scroll for very small screens if content overflows */
+            overflow-x: hidden;
+            -webkit-user-select: none; /* Disable text selection for mobile */
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent; /* Remove tap highlight */
+        }
+        canvas {
+            border: 1px solid #555;
+            background-color: #2a2a2a;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            max-width: 100%; /* Make canvas responsive */
+            height: auto; /* Maintain aspect ratio */
+        }
+        #ui-container {
+            display: flex;
+            justify-content: space-between;
+            width: 800px; /* Original fixed width */
+            max-width: 95%; /* Allow it to shrink on smaller screens */
+            padding: 10px;
+            background-color: #333;
+            border: 1px solid #555;
+            margin-bottom: 10px;
+            box-sizing: border-box; /* Include padding/border in width */
+        }
         .stat-bar-container { width: 150px; height: 20px; background-color: #555; border: 1px solid #888; margin: 5px 0; }
         .stat-bar { height: 100%; background-color: red; width: 100%; transition: width 0.1s linear; }
         #exp-bar { background-color: dodgerblue; }
-        #level-up-screen { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: rgba(0,0,0,0.9); border: 2px solid #ccc; padding: 20px; display: none; flex-direction: column; align-items: center; z-index: 10; }
-        .upgrade-option { background-color: #444; color: #eee; border: 1px solid #777; padding: 10px; margin: 5px; cursor: pointer; min-width: 200px; text-align: center; }
+        #level-up-screen, #game-over-screen {
+            position: fixed; /* Use fixed for better mobile overlay */
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0,0,0,0.9);
+            border: 2px solid #ccc;
+            padding: 20px;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            z-index: 10;
+            text-align: center;
+            max-width: 90%; /* Responsive width */
+            box-sizing: border-box;
+        }
+        .upgrade-option {
+            background-color: #444;
+            color: #eee;
+            border: 1px solid #777;
+            padding: 10px;
+            margin: 5px;
+            cursor: pointer;
+            min-width: 200px;
+            max-width: 90%; /* Responsive width for options */
+            text-align: center;
+            box-sizing: border-box;
+        }
         .upgrade-option:hover { background-color: #666; }
-        #game-over-screen { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: rgba(0,0,0,0.9); border: 2px solid #ccc; padding: 20px; display: none; flex-direction: column; align-items: center; z-index: 10; text-align: center; }
         #restart-button { background-color: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; margin-top: 15px; }
         #restart-button:hover { background-color: #0056b3; }
         .tooltip {
@@ -28,6 +87,107 @@
             display: none;
             z-index: 20;
         }
+
+        /* Mobile Controls Styling */
+        #mobile-controls {
+            display: none; /* Hidden by default, shown on small screens */
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 50;
+            width: 180px; /* Adjust as needed */
+            height: 180px; /* Adjust as needed */
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .control-button {
+            background-color: rgba(68, 68, 68, 0.7);
+            color: #eee;
+            border: 1px solid #777;
+            width: 60px; /* Size of each button */
+            height: 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            cursor: pointer;
+            border-radius: 5px;
+            margin: 2px; /* Small spacing between buttons */
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            touch-action: manipulation; /* Prevent double tap zoom */
+        }
+        .control-button:active {
+            background-color: rgba(102, 102, 102, 0.9);
+        }
+
+        /* Layout for D-pad */
+        #control-up { order: 1; margin-left: 66px; margin-right: 66px; } /* Center top */
+        #control-left { order: 2; }
+        #control-down { order: 4; margin-left: 66px; margin-right: 66px; } /* Center bottom */
+        #control-right { order: 3; } /* This order places it correctly with flex-wrap */
+        #control-spacer { order: 5; width: 60px; height: 60px; visibility: hidden; } /* Placeholder for center */
+
+
+        /* Media Query for mobile devices: show controls, adjust layout */
+        @media (max-width: 820px) { /* Adjust breakpoint as needed for common phone widths */
+            #mobile-controls {
+                display: flex; /* Show touch controls */
+            }
+            /* You might want to adjust canvas size further for very small screens */
+            canvas {
+                max-width: 100vw; /* Take full viewport width */
+                max-height: calc(100vh - 200px); /* Leave space for UI and controls */
+                width: 100%; /* Ensure it tries to fill */
+                height: auto;
+            }
+            #ui-container {
+                flex-wrap: wrap; /* Allow UI elements to wrap on small screens */
+                justify-content: center;
+            }
+            #ui-container > div {
+                margin: 5px; /* Add some margin to wrapped items */
+            }
+        }
+        @media (max-height: 500px) and (max-width: 900px) { /* Landscape orientation on phones */
+            body {
+                flex-direction: row; /* Layout side-by-side in landscape */
+                justify-content: space-around;
+                align-items: center;
+            }
+            #ui-container {
+                width: 150px; /* Smaller width for UI in landscape */
+                flex-direction: column;
+                margin-right: 10px;
+                max-width: 25%;
+                min-width: 120px;
+            }
+            canvas {
+                max-width: 70%; /* Take up most space */
+                max-height: 90vh;
+            }
+            #mobile-controls {
+                bottom: auto;
+                left: auto;
+                right: 10px;
+                top: 50%;
+                transform: translateY(-50%);
+                width: 150px;
+                height: 150px;
+            }
+            .control-button {
+                width: 50px;
+                height: 50px;
+                font-size: 20px;
+            }
+            #control-up, #control-down { margin-left: 55px; margin-right: 55px; } /* Adjust center for smaller buttons */
+
+        }
     </style>
 </head>
 <body>
@@ -39,16 +199,12 @@
     <script>
       function startMusicOnce() {
         const music = document.getElementById('bg-music');
-        // Check if music exists and is paused before attempting to play
         if (music && music.paused) {
           music.volume = 0.3;
-          music.play().catch(() => { /* Autoplay blocked, catch the error quietly */ });
+          music.play().catch(() => {});
         }
-        // No need to manually remove listeners if using { once: true }
       }
 
-      // Listen for a click or keydown event anywhere on the window to start music
-      // The { once: true } option ensures the listener is automatically removed after being triggered once.
       window.addEventListener('click', startMusicOnce, { once: true });
       window.addEventListener('keydown', startMusicOnce, { once: true });
     </script>
@@ -69,6 +225,14 @@
         <div>Kills: <span id="kills-value">0</span></div>
     </div>
     <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+    <div id="mobile-controls">
+        <div class="control-button" id="control-up">↑</div>
+        <div class="control-button" id="control-left">←</div>
+        <div class="control-button" id="control-spacer"></div><div class="control-button" id="control-right">→</div>
+        <div class="control-button" id="control-down">↓</div>
+    </div>
+
 
     <div id="level-up-screen">
         <h2>LEVEL UP!</h2>
@@ -107,6 +271,13 @@
         const restartButton = document.getElementById('restart-button');
         const upgradeTooltip = document.getElementById('upgrade-tooltip');
 
+        // Get mobile control buttons
+        const controlUp = document.getElementById('control-up');
+        const controlDown = document.getElementById('control-down');
+        const controlLeft = document.getElementById('control-left');
+        const controlRight = document.getElementById('control-right');
+
+
         let player;
         let enemies = [];
         let projectiles = [];
@@ -121,7 +292,7 @@
         let isPaused = false;
         let enemySpawnInterval = 2000;
         let lastEnemySpawnTime = 0;
-        const keys = {};
+        const keys = {}; // Used for both keyboard and simulated touch input
 
         const PLAYER_COLORS = {
             skin: '#F0D8C0', hair: '#201008', dress_main: '#A0A0A0',
@@ -165,10 +336,12 @@
             addWeapon(weaponInstance) { this.weapons.push(weaponInstance); }
             update() {
                 let dx = 0, dy = 0;
-                if (keys['w'] || keys['ArrowUp']) dy -= 1;
-                if (keys['s'] || keys['ArrowDown']) dy += 1;
-                if (keys['a'] || keys['ArrowLeft']) dx -= 1;
-                if (keys['d'] || keys['ArrowRight']) dx += 1;
+                // Combined keyboard and touch input
+                if (keys['w'] || keys['ArrowUp'] || keys['touchUp']) dy -= 1;
+                if (keys['s'] || keys['ArrowDown'] || keys['touchDown']) dy += 1;
+                if (keys['a'] || keys['ArrowLeft'] || keys['touchLeft']) dx -= 1;
+                if (keys['d'] || keys['ArrowRight'] || keys['touchRight']) dx += 1;
+
                 if (dx !== 0 && dy !== 0) { const l = Math.sqrt(dx * dx + dy * dy); dx /= l; dy /= l; }
                 this.x += dx * this.speed * this.moveSpeedMultiplier;
                 this.y += dy * this.speed * this.moveSpeedMultiplier;
@@ -246,7 +419,7 @@
         class Garlic {
             constructor(p) { this.player = p; this.type = WEAPON_TYPES.GARLIC; this.level = 1; this.maxLevel = 8; this.baseDamage = 3; this.damageTickInterval = 500; this.lastDamageTick = 0; this.baseRadius = 50; this.enemiesHitThisTick = new Set(); }
             getDamage() { return (this.baseDamage + Math.floor((this.level-1)/2)*1 + (this.level>=4?1:0) + (this.level>=6?1:0)) * this.player.might; }
-            getRadius() { return this.baseRadius * (1 + Math.floor((this.level-1)/2)*0.2 + (this.level>=2?0.2:0) + (this.level>=5?0.2:0)); } // Simplified area increase logic slightly
+            getRadius() { return this.baseRadius * (1 + Math.floor((this.level-1)/2)*0.2 + (this.level>=2?0.2:0) + (this.level>=5?0.2:0)); }
             getCooldownReduction() { return Math.floor((this.level-1)/2)*0.1 + (this.level>=3?0.1:0) + (this.level>=5?0.1:0); }
             update() {
                 if (Date.now() - this.lastDamageTick > (this.damageTickInterval * (1 - this.getCooldownReduction())) ) {
@@ -254,7 +427,7 @@
                     enemies.forEach(e => {
                         if (Math.hypot((this.player.x+this.player.width/2)-(e.x+e.width/2), (this.player.y+this.player.height/2)-(e.y+e.height/2)) < this.getRadius()+e.width/2) {
                             e.takeDamage(this.getDamage()); this.enemiesHitThisTick.add(e);
-                            if (this.level === 8 && Math.random() < 0.15) this.player.heal(1); // Soul Eater
+                            if (this.level === 8 && Math.random() < 0.15) this.player.heal(1);
                         }
                     });
                     this.lastDamageTick = Date.now();
@@ -357,7 +530,7 @@
                 });
                 if (p.x < -50 || p.x > canvas.width+50 || p.y < -50 || p.y > canvas.height+(p.isAxe?100:0)) projectilesToRemove.push(pIndex);
             });
-            projectilesToRemove.sort((a,b) => b-a).forEach(idx => projectiles.splice(idx, 1)); // Remove in reverse
+            projectilesToRemove.sort((a,b) => b-a).forEach(idx => projectiles.splice(idx, 1));
 
             player.weapons.filter(w=>w.type===WEAPON_TYPES.WHIP).forEach(whip=>{whip.activeHitboxes.forEach(hb=>{enemies.forEach(e=>{if(!e.isDead&&!hb.enemiesHit.has(e)&&hb.x<e.x+e.width&&hb.x+hb.width>e.x&&hb.y<e.y+e.height&&hb.y+hb.height>e.y){e.takeDamage(whip.getDamage());hb.enemiesHit.add(e);if(whip.level===8)setTimeout(()=>{if(!e.isDead)e.takeDamage(whip.getDamage());},50);}});});});
             enemies.forEach(e=>{if(!e.isDead&&player.x<e.x+e.width&&player.x+player.width>e.x&&player.y<e.y+e.height&&player.y+player.height>e.y)player.takeDamage(e.damage);});
@@ -395,7 +568,6 @@
             player.update();
             enemies.forEach(e=>e.update()); enemies=enemies.filter(e=>!e.isDead);
             projectiles.forEach(p=>p.update());
-             // Filter projectiles after all updates and collision checks for them are done in a frame
             projectiles = projectiles.filter(p => p.x > -50 && p.x < canvas.width + 50 && p.y > -50 && p.y < canvas.height + (p.isAxe ? 100 : 0));
 
             xpOrbs.forEach(o=>o.update()); goldCoins.forEach(c=>c.update()); foodItems.forEach(f=>f.update());
@@ -404,8 +576,21 @@
             enemies.forEach(e=>e.draw()); projectiles.forEach(p=>p.draw()); player.draw();
             requestAnimationFrame(gameLoop);
         }
+
+        // Keyboard Event Listeners (existing)
         window.addEventListener('keydown',(e)=>keys[e.key.toLowerCase()]=true);
         window.addEventListener('keyup',(e)=>keys[e.key.toLowerCase()]=false);
+
+        // Touch Event Listeners for Mobile Controls
+        controlUp.addEventListener('touchstart', (e) => { e.preventDefault(); keys['touchUp'] = true; }, { passive: false });
+        controlUp.addEventListener('touchend', () => { keys['touchUp'] = false; });
+        controlDown.addEventListener('touchstart', (e) => { e.preventDefault(); keys['touchDown'] = true; }, { passive: false });
+        controlDown.addEventListener('touchend', () => { keys['touchDown'] = false; });
+        controlLeft.addEventListener('touchstart', (e) => { e.preventDefault(); keys['touchLeft'] = true; }, { passive: false });
+        controlLeft.addEventListener('touchend', () => { keys['touchLeft'] = false; });
+        controlRight.addEventListener('touchstart', (e) => { e.preventDefault(); keys['touchRight'] = true; }, { passive: false });
+        controlRight.addEventListener('touchend', () => { keys['touchRight'] = false; });
+
         restartButton.addEventListener('click',initGame);
         document.addEventListener('mousemove',(e)=>{if(upgradeTooltip&&upgradeTooltip.style.display==='block'){upgradeTooltip.style.left=e.clientX+15+'px';upgradeTooltip.style.top=e.clientY+15+'px';}});
         initGame();
